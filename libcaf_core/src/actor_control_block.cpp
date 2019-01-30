@@ -18,18 +18,13 @@
 
 #include "caf/actor_control_block.hpp"
 
-#include "caf/to_string.hpp"
-
-
-
-
-#include "caf/message.hpp"
-#include "caf/actor_system.hpp"
-#include "caf/proxy_registry.hpp"
 #include "caf/abstract_actor.hpp"
-#include "caf/mailbox_element.hpp"
-
+#include "caf/actor_system.hpp"
 #include "caf/detail/disposer.hpp"
+#include "caf/mailbox_element.hpp"
+#include "caf/message.hpp"
+#include "caf/proxy_registry.hpp"
+#include "caf/to_string.hpp"
 
 namespace caf {
 
@@ -82,6 +77,7 @@ bool operator==(const abstract_actor* x, const strong_actor_ptr& y) {
 
 error load_actor(strong_actor_ptr& storage, execution_unit* ctx,
                  actor_id aid, const node_id& nid) {
+  CAF_LOG_TRACE(CAF_ARG(aid) << CAF_ARG(nid));
   if (ctx == nullptr)
     return sec::no_context;
   auto& sys = ctx->system();
@@ -91,11 +87,7 @@ error load_actor(strong_actor_ptr& storage, execution_unit* ctx,
                   << (storage ? "found" : "not found"));
     return none;
   }
-  auto prp = ctx->proxy_registry_ptr();
-  if (prp == nullptr)
-    return sec::no_proxy_registry;
-  // deal with (proxies for) remote actors
-  storage = prp->get_or_put(nid, aid);
+  storage = sys.proxies().get_or_put(nid, aid);
   return none;
 }
 

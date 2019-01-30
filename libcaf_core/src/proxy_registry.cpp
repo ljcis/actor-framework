@@ -19,25 +19,36 @@
 #include <utility>
 #include <algorithm>
 
-#include "caf/node_id.hpp"
 #include "caf/actor_addr.hpp"
-#include "caf/serializer.hpp"
 #include "caf/actor_system.hpp"
 #include "caf/deserializer.hpp"
+#include "caf/locks.hpp"
+#include "caf/node_id.hpp"
 #include "caf/proxy_registry.hpp"
+#include "caf/serializer.hpp"
 
 #include "caf/logger.hpp"
 #include "caf/actor_registry.hpp"
 
 namespace caf {
 
-proxy_registry::backend::~backend() {
-  // nop
+namespace {
+
+using exclusive_guard = unique_lock<detail::shared_spinlock>;
+
+using shared_guard = shared_lock<detail::shared_spinlock>;
+
+using upgrade_guard = upgrade_to_unique_lock<detail::shared_spinlock>;
+
+strong_actor_ptr dummy_factory(actor_system&, const node_id&, actor_id, actor) {
+  return nullptr;
 }
 
-proxy_registry::proxy_registry(actor_system& sys, backend& be)
-    : system_(sys),
-      backend_(be) {
+} // namespace <anonymous>
+
+proxy_registry::proxy_registry(actor_system& sys)
+  : system_(sys),
+    factory_(dummy_factory) {
   // nop
 }
 
@@ -45,77 +56,136 @@ proxy_registry::~proxy_registry() {
   clear();
 }
 
-size_t proxy_registry::count_proxies(const node_id& node) {
-  auto i = proxies_.find(node);
-  return (i != proxies_.end()) ? i->second.size() : 0;
+size_t proxy_registry::count_proxies(const node_id& node) const {
+  shared_guard guard{mtx_};
+  auto i = nodes_.find(node);
+  return i != nodes_.end() ? i->second.proxies.size() : 0;
 }
 
-strong_actor_ptr proxy_registry::get(const node_id& node, actor_id aid) {
-  auto& submap = proxies_[node];
-  auto i = submap.find(aid);
-  if (i != submap.end())
-    return i->second;
-  return nullptr;
+strong_actor_ptr proxy_registry::get(const node_id& node, actor_id aid) const {
+  shared_guard guard{mtx_};
+  auto i = nodes_.find(node);
+  if (i == nodes_.end())
+    return nullptr;
+  auto& submap = i->second.proxies;
+  auto j = submap.find(aid);
+  if (j == submap.end())
+    return nullptr;
+  return j->second;
 }
 
 strong_actor_ptr proxy_registry::get_or_put(const node_id& nid, actor_id aid) {
   CAF_LOG_TRACE(CAF_ARG(nid) << CAF_ARG(aid));
-  auto& result = proxies_[nid][aid];
-  if (!result)
-    result = backend_.make_proxy(nid, aid);
+  shared_guard guard{mtx_};
+  auto i = nodes_.find(nid);
+  if (i == nodes_.end()) {
+    auto result = factory_(system_, nid, aid, actor{});
+    proxy_map tmp;
+    tmp.emplace(aid, result);
+    upgrade_guard uguard{guard};
+    auto op = nodes_.emplace(nid, node_state{actor{}, std::move(tmp)});
+    if (!op.second) {
+      // We got preempted, check whether there's already a proxy in the map.
+      auto sub_op = op.first->second.proxies.emplace(aid, result);
+      if (!sub_op.second)
+        return sub_op.first->second;
+    }
+    return result;
+  }
+  auto& submap = i->second.proxies;
+  auto j = submap.find(aid);
+  if (j == submap.end()) {
+    auto result = factory_(system_, nid, aid, i->second.endpoint);
+    upgrade_guard uguard{guard};
+    auto op = submap.emplace(aid, result);
+    if (!op.second)
+      return op.first->second;
+    return result;
+  }
+  return j->second;
+}
+
+std::vector<strong_actor_ptr>
+proxy_registry::get_all(const node_id& nid) const {
+  // Make sure we have allocated at least some initial memory.
+  std::vector<strong_actor_ptr> result;
+  result.reserve(128);
+  // Fetch all proxies in critical section.
+  shared_guard guard{mtx_};
+  auto i = nodes_.find(nid);
+  if (i != nodes_.end())
+    for (auto& kvp : i->second.proxies)
+      result.emplace_back(kvp.second);
   return result;
 }
 
-std::vector<strong_actor_ptr> proxy_registry::get_all(const node_id& node) {
+std::vector<strong_actor_ptr> proxy_registry::claim(const node_id& nid,
+                                                    actor endpoint) {
+  // Make sure we have allocated at least some initial memory.
   std::vector<strong_actor_ptr> result;
-  auto i = proxies_.find(node);
-  if (i != proxies_.end())
-    for (auto& kvp : i->second)
-      result.push_back(kvp.second);
+  result.reserve(128);
+  // Fetch all proxies in critical section.
+  exclusive_guard guard{mtx_};
+  auto& node = nodes_[nid];
+  node.endpoint = std::move(endpoint);
+  for (auto& kvp : node.proxies)
+    result.emplace_back(kvp.second);
   return result;
 }
 
 bool proxy_registry::empty() const {
-  return proxies_.empty();
+  shared_guard guard{mtx_};
+  return nodes_.empty();
 }
 
 void proxy_registry::erase(const node_id& nid) {
   CAF_LOG_TRACE(CAF_ARG(nid));
-  auto i = proxies_.find(nid);
-  if (i == proxies_.end())
+  exclusive_guard guard{mtx_};
+  auto i = nodes_.find(nid);
+  if (i == nodes_.end())
     return;
-  for (auto& kvp : i->second)
+  for (auto& kvp : i->second.proxies)
     kill_proxy(kvp.second, exit_reason::remote_link_unreachable);
-  proxies_.erase(i);
+  nodes_.erase(i);
 }
 
 void proxy_registry::erase(const node_id& nid, actor_id aid, error rsn) {
   CAF_LOG_TRACE(CAF_ARG(nid) << CAF_ARG(aid));
-  auto i = proxies_.find(nid);
-  if (i != proxies_.end()) {
-    auto& submap = i->second;
+  exclusive_guard guard{mtx_};
+  auto i = nodes_.find(nid);
+  if (i != nodes_.end()) {
+    auto& submap = i->second.proxies;
     auto j = submap.find(aid);
     if (j == submap.end())
       return;
     kill_proxy(j->second, std::move(rsn));
     submap.erase(j);
     if (submap.empty())
-      proxies_.erase(i);
+      nodes_.erase(i);
   }
 }
 
 void proxy_registry::clear() {
-  for (auto& kvp : proxies_)
-    for (auto& sub_kvp : kvp.second)
+  exclusive_guard guard{mtx_};
+  for (auto& kvp : nodes_)
+    for (auto& sub_kvp : kvp.second.proxies)
       kill_proxy(sub_kvp.second, exit_reason::remote_link_unreachable);
-  proxies_.clear();
+  nodes_.clear();
 }
 
-void proxy_registry::kill_proxy(strong_actor_ptr& ptr, error rsn) {
+void proxy_registry::kill_proxy(strong_actor_ptr& ptr, error) {
   if (!ptr)
     return;
-  auto pptr = static_cast<actor_proxy*>(actor_cast<abstract_actor*>(ptr));
-  pptr->kill_proxy(backend_.registry_context(), std::move(rsn));
+  // TODO: implement me
+  // auto pptr = static_cast<actor_proxy*>(actor_cast<abstract_actor*>(ptr));
+  // pptr->kill_proxy(backend_.registry_context(), std::move(rsn));
+}
+
+void proxy_registry::init(factory f) {
+  CAF_LOG_TRACE("");
+  // Set factory without mutex, because this function must be called by the
+  // actor system before any other member function.
+  factory_ = f;
 }
 
 } // namespace caf

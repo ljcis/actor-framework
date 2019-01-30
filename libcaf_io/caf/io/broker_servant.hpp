@@ -75,13 +75,6 @@ protected:
 
   void invoke_mailbox_element_impl(execution_unit* ctx, mailbox_element& x) {
     auto self = this->parent();
-    auto pfac = self->proxy_registry_ptr();
-    if (pfac)
-      ctx->proxy_registry_ptr(pfac);
-    auto guard = detail::make_scope_guard([=] {
-      if (pfac)
-        ctx->proxy_registry_ptr(nullptr);
-    });
     self->activate(ctx, x);
   }
 

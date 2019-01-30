@@ -29,8 +29,7 @@ namespace caf {
 namespace io {
 namespace basp {
 
-instance::callee::callee(actor_system& sys, proxy_registry::backend& backend)
-    : namespace_(sys, backend) {
+instance::callee::callee(actor_system& sys) : system_(sys) {
   // nop
 }
 

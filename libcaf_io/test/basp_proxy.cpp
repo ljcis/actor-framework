@@ -5,7 +5,7 @@
  *                     | |___ / ___ \|  _|      Framework                     *
  *                      \____/_/   \_|_|                                      *
  *                                                                            *
- * Copyright 2011-2018 Dominik Charousset                                     *
+ * Copyright 2011-2019 Dominik Charousset                                     *
  *                                                                            *
  * Distributed under the terms and conditions of the BSD 3-Clause License or  *
  * (at your option) under the terms and conditions of the Boost Software      *
@@ -16,40 +16,26 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#pragma once
+#define CAF_SUITE basp_proxy
 
-#include "caf/fwd.hpp"
+#include "caf/io/basp_proxy.hpp"
 
-#include "caf/config.hpp"
+#include "caf/test/dsl.hpp"
 
-namespace caf {
+using namespace caf;
 
-/// Identifies an execution unit, e.g., a worker thread of the scheduler. By
-/// querying its execution unit, an actor can access other context information.
-class execution_unit {
-public:
-  explicit execution_unit(actor_system* sys);
+namespace {
 
-  execution_unit(execution_unit&&) = delete;
-  execution_unit(const execution_unit&) = delete;
+struct fixture {
 
-  virtual ~execution_unit();
-
-  /// Enqueues `ptr` to the job list of the execution unit.
-  /// @warning Must only be called from a {@link resumable} currently
-  ///          executed by this execution unit.
-  virtual void exec_later(resumable* ptr) = 0;
-
-  /// Returns the enclosing actor system.
-  /// @warning Must be set before the execution unit calls `resume` on an actor.
-  actor_system& system() const {
-    CAF_ASSERT(system_ != nullptr);
-    return *system_;
-  }
-
-protected:
-  actor_system* system_;
 };
 
-} // namespace caf
+} // namespace <anonymous>
 
+CAF_TEST_FIXTURE_SCOPE(basp_proxy_tests, fixture)
+
+CAF_TEST(todo) {
+  // implement me
+}
+
+CAF_TEST_FIXTURE_SCOPE_END()

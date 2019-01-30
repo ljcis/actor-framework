@@ -46,10 +46,20 @@ const char* basp_broker_state::name = "basp_broker";
  ******************************************************************************/
 
 basp_broker_state::basp_broker_state(broker* selfptr)
+<<<<<<< HEAD
   : basp::instance::callee(selfptr->system(),
                            static_cast<proxy_registry::backend&>(*this)),
     self(selfptr),
     instance(selfptr, *this) {
+=======
+    : basp::instance::callee(selfptr->system()),
+      self(selfptr),
+      instance(selfptr, *this),
+      max_buffers(get_or(self->config(), "middleman.cached-udp-buffers",
+                         defaults::middleman::cached_udp_buffers)),
+      max_pending_messages(get_or(self->config(), "middleman.max-pending-msgs",
+                                  defaults::middleman::max_pending_msgs)) {
+>>>>>>> WIP
   CAF_ASSERT(this_node() != none);
 }
 
@@ -59,7 +69,8 @@ basp_broker_state::~basp_broker_state() {
     anon_send_exit(kvp.second, exit_reason::kill);
 }
 
-strong_actor_ptr basp_broker_state::make_proxy(node_id nid, actor_id aid) {
+/* TODO:
+strong_actor_ptr basp_broker_state::make(node_id nid, actor_id aid) {
   CAF_LOG_TRACE(CAF_ARG(nid) << CAF_ARG(aid));
   CAF_ASSERT(nid != this_node());
   if (nid == none || aid == invalid_actor_id)
@@ -123,10 +134,7 @@ strong_actor_ptr basp_broker_state::make_proxy(node_id nid, actor_id aid) {
   mm->notify<hook::new_remote_actor>(res);
   return res;
 }
-
-execution_unit* basp_broker_state::registry_context() {
-  return self->context();
-}
+*/
 
 void basp_broker_state::finalize_handshake(const node_id& nid, actor_id aid,
                                            std::set<std::string>& sigs) {
@@ -144,7 +152,7 @@ void basp_broker_state::finalize_handshake(const node_id& nid, actor_id aid,
       ptr = actor_cast<strong_actor_ptr>(system().registry().get(aid));
       CAF_LOG_DEBUG_IF(!ptr, "actor not found:" << CAF_ARG(aid));
     } else {
-      ptr = namespace_.get_or_put(nid, aid);
+      ptr = self->system().proxies().get_or_put(nid, aid);
       CAF_LOG_ERROR_IF(!ptr, "creating actor in finalize_handshake failed");
     }
   }
@@ -155,7 +163,7 @@ void basp_broker_state::finalize_handshake(const node_id& nid, actor_id aid,
 void basp_broker_state::purge_state(const node_id& nid) {
   CAF_LOG_TRACE(CAF_ARG(nid));
   // Destroy all proxies of the lost node.
-  namespace_.erase(nid);
+  proxies().erase(nid);
   // Cleanup all remaining references to the lost node.
   for (auto& kvp : monitored_actors)
     kvp.second.erase(nid);
@@ -491,6 +499,14 @@ void basp_broker_state::send_buffered_messages(execution_unit*,
   flush(hdl);
 }
 
+void basp_broker_state::handle_heartbeat(const node_id&) {
+  // nop
+}
+
+proxy_registry& basp_broker_state::proxies() {
+  return self->system().proxies();
+}
+
 /******************************************************************************
  *                                basp_broker                                 *
  ******************************************************************************/
@@ -704,18 +720,6 @@ behavior basp_broker::make_behavior() {
                    tick_atom::value, interval);
     }
   };
-}
-
-resumable::resume_result basp_broker::resume(execution_unit* ctx, size_t mt) {
-  ctx->proxy_registry_ptr(&state.instance.proxies());
-  auto guard = detail::make_scope_guard([=] {
-    ctx->proxy_registry_ptr(nullptr);
-  });
-  return super::resume(ctx, mt);
-}
-
-proxy_registry* basp_broker::proxy_registry_ptr() {
-  return &state.instance.proxies();
 }
 
 } // namespace io

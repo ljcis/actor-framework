@@ -655,6 +655,54 @@ CAF_TEST(actor_serialize_and_deserialize) {
                  prx->id(), std::vector<actor_id>{}, msg);
 }
 
+CAF_TEST(indirect_connections) {
+  // this node receives a message from jupiter via mars and responds via mars
+  // and any ad-hoc automatic connection requests are ignored
+  CAF_MESSAGE("self: " << to_string(self()->address()));
+  CAF_MESSAGE("publish self at port 4242");
+  auto ax = accept_handle::from_int(4242);
+  mpx()->provide_acceptor(4242, ax);
+  sys.middleman().publish(self(), 4242);
+  mpx()->flush_runnables(); // process publish message in basp_broker
+  CAF_MESSAGE("connect to Mars");
+  connect_node(mars(), ax, self()->id());
+  CAF_MESSAGE("actor from Jupiter sends a message to us via Mars");
+  auto mx = mock(mars().connection,
+                 {basp::message_type::dispatch_message, 0, 0, 0,
+                  jupiter().dummy_actor->id(), self()->id()},
+                 std::vector<actor_id>{},
+                 make_message("hello from jupiter!"));
+  CAF_MESSAGE("expect ('sys', 'get', \"info\") from Earth to Jupiter at Mars");
+  // this asks Jupiter if it has a 'SpawnServ'
+  mx.receive(mars().connection,
+             basp::message_type::dispatch_message,
+             basp::header::named_receiver_flag, any_vals,
+             default_operation_data,
+             any_vals, invalid_actor_id,
+             spawn_serv_atom,
+             std::vector<actor_id>{},
+             make_message(sys_atom::value, get_atom::value, "info"));
+  CAF_MESSAGE("expect announce_proxy message at Mars from Earth to Jupiter");
+  mx.receive(mars().connection,
+             basp::message_type::announce_proxy, no_flags, no_payload,
+             no_operation_data, invalid_actor_id, jupiter().dummy_actor->id());
+  CAF_MESSAGE("receive message from jupiter");
+  self()->receive(
+    [](const std::string& str) -> std::string {
+      CAF_CHECK_EQUAL(str, "hello from jupiter!");
+      return "hello from earth!";
+    }
+  );
+  mpx()->exec_runnable(); // process forwarded message in basp_broker
+  mock()
+  .receive(mars().connection,
+           basp::message_type::dispatch_message, no_flags, any_vals,
+           default_operation_data,
+           self()->id(), jupiter().dummy_actor->id(),
+           std::vector<actor_id>{},
+           make_message("hello from earth!"));
+}
+
 CAF_TEST_FIXTURE_SCOPE_END()
 
 CAF_TEST_FIXTURE_SCOPE(basp_tests_with_autoconn, autoconn_enabled_fixture)

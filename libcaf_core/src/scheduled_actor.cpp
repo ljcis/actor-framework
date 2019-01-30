@@ -415,12 +415,6 @@ scheduled_actor::resume(execution_unit* ctx, size_t max_throughput) {
   return resumable::resume_later;
 }
 
-// -- scheduler callbacks ------------------------------------------------------
-
-proxy_registry* scheduled_actor::proxy_registry_ptr() {
-  return nullptr;
-}
-
 // -- state modifiers ----------------------------------------------------------
 
 void scheduled_actor::quit(error x) {

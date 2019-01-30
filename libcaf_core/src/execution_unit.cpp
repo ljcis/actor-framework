@@ -20,9 +20,7 @@
 
 namespace caf {
 
-execution_unit::execution_unit(actor_system* sys)
-    : system_(sys),
-      proxies_(nullptr) {
+execution_unit::execution_unit(actor_system* sys) : system_(sys) {
   // nop
 }
 

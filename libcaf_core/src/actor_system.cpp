@@ -305,6 +305,7 @@ actor_system::actor_system(actor_system_config& cfg)
       types_(*this),
       logger_(new caf::logger(*this), false),
       registry_(*this),
+      proxies_(*this),
       groups_(*this),
       dummy_execution_unit_(this),
       await_actors_before_shutdown_(true),
@@ -416,6 +417,8 @@ actor_system::~actor_system() {
         ptr->stop();
       }
     }
+    // drop all remaining proxies
+    proxies_.clear();
     await_detached_threads();
     registry_.stop();
   }
@@ -440,10 +443,6 @@ scheduler::abstract_coordinator& actor_system::scheduler() {
 
 caf::logger& actor_system::logger() {
   return *logger_;
-}
-
-actor_registry& actor_system::registry() {
-  return registry_;
 }
 
 const uniform_type_info_map& actor_system::types() const {

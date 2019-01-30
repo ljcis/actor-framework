@@ -45,6 +45,7 @@
 #include "caf/logger.hpp"
 #include "caf/make_actor.hpp"
 #include "caf/prohibit_top_level_spawn_marker.hpp"
+#include "caf/proxy_registry.hpp"
 #include "caf/runtime_settings_map.hpp"
 #include "caf/scoped_execution_unit.hpp"
 #include "caf/spawn_options.hpp"
@@ -257,17 +258,24 @@ public:
   /// Returns the system-wide event logger.
   caf::logger& logger();
 
-  /// Returns the system-wide actor registry.
-  actor_registry& registry();
+  /// Returns registry for well-known actors.
+  actor_registry& registry() {
+    return registry_;
+  }
+
+  /// Returns the registry for remote actors.
+  proxy_registry& proxies() {
+    return proxies_;
+  }
+
+  /// Returns the system-wide group manager.
+  group_manager& groups();
 
   /// Returns the system-wide factory for custom types and actors.
   const uniform_type_info_map& types() const;
 
   /// Returns a string representation for `err`.
   std::string render(const error& x) const;
-
-  /// Returns the system-wide group manager.
-  group_manager& groups();
 
   /// Returns `true` if the I/O module is available, `false` otherwise.
   bool has_middleman() const;
@@ -598,6 +606,9 @@ private:
 
   /// Maps well-known actor names to actor handles.
   actor_registry registry_;
+
+  /// Manages remote actor handles.
+  proxy_registry proxies_;
 
   /// Maps well-known group names to group handles.
   group_manager groups_;

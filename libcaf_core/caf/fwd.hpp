@@ -117,6 +117,7 @@ class message_id;
 class message_view;
 class node_id;
 class outbound_path;
+class proxy_factory;
 class proxy_registry;
 class ref_counted;
 class response_promise;

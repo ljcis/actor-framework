@@ -97,7 +97,28 @@ actor_system::module* middleman::make(actor_system& sys, detail::type_list<>) {
 }
 
 middleman::middleman(actor_system& sys) : system_(sys) {
-  // nop
+  // Configure the proxy registry to produce forwarding proxies.
+  auto f = [](actor_system& sys, const node_id& nid, actor_id aid, actor dest) {
+    // TODO we somehow need to call learned_new_node_indirectly(nid) on the
+    //      BASP broker
+    actor_config cfg;
+    auto ptr = make_actor<forwarding_actor_proxy, strong_actor_ptr>(aid, nid,
+                                                                    sys, cfg,
+                                                                    dest);
+    auto mm = &sys.middleman();
+    ptr->get()->attach_functor([=](const error& rsn) {
+      mm->backend().post([=] {
+        // using ptr->id() instead of aid keeps this actor instance alive
+        // until the original instance terminates, thus preventing subtle
+        // bugs with attachables
+        auto bptr = static_cast<basp_broker*>(dest->get());
+        if (!bptr->getf(abstract_actor::is_terminated_flag))
+          bptr->state.proxies().erase(nid, ptr->id(), rsn);
+      });
+    });
+    // TODO trigger BASP broker to call write_announce_proxy
+  };
+  sys.proxies().init();
 }
 
 expected<strong_actor_ptr> middleman::remote_spawn_impl(const node_id& nid,

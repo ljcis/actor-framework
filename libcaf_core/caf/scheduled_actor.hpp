@@ -280,12 +280,6 @@ public:
 
   resume_result resume(execution_unit*, size_t) override;
 
-  // -- scheduler callbacks ----------------------------------------------------
-
-  /// Returns a factory for proxies created
-  /// and managed by this actor or `nullptr`.
-  virtual proxy_registry* proxy_registry_ptr();
-
   // -- state modifiers --------------------------------------------------------
 
   /// Finishes execution of this actor after any currently running

@@ -45,12 +45,20 @@ class instance {
 public:
   /// Provides a callback-based interface for certain BASP events.
   class callee {
-  protected:
-    using buffer_type = std::vector<char>;
   public:
-    explicit callee(actor_system& sys, proxy_registry::backend& backend);
+    // -- member types ---------------------------------------------------------
+
+    using buffer_type = std::vector<char>;
+
+    using endpoint_handle = variant<connection_handle, datagram_handle>;
+
+    // -- constructors, destructors, and assignment operators ------------------
+
+    explicit callee(actor_system& sys);
 
     virtual ~callee();
+
+    // -- pure virtual member functions ----------------------------------------
 
     /// Called if a server handshake was received and
     /// the connection to `nid` is established.
@@ -86,21 +94,6 @@ public:
     /// Called if a heartbeat was received from `nid`
     virtual void handle_heartbeat(const node_id& nid) = 0;
 
-    /// Returns the actor namespace associated to this BASP protocol instance.
-    proxy_registry& proxies() {
-      return namespace_;
-    }
-
-    /// Returns the hosting actor system.
-    actor_system& system() {
-      return namespace_.system();
-    }
-
-    /// Returns the system-wide configuration.
-    const actor_system_config& config() const {
-      return namespace_.system().config();
-    }
-
     /// Send messages that were buffered while connectivity establishment
     /// was pending using `hdl`.
     virtual void send_buffered_messages(execution_unit* ctx, node_id nid,
@@ -117,8 +110,25 @@ public:
     /// Flushes the underlying write buffer of `hdl`.
     virtual void flush(connection_handle hdl) = 0;
 
+    // -- properties -----------------------------------------------------------
+
+    /// Returns the hosting actor system.
+    actor_system& system() {
+      return system_;
+    }
+
+    /// Returns the hosting actor system.
+    proxy_registry& proxies() {
+      return system_.proxies();
+    }
+
+    /// Returns the system-wide configuration.
+    const actor_system_config& config() const {
+      return system_.config();
+    }
+
   protected:
-    proxy_registry namespace_;
+    actor_system& system_;
   };
 
   /// Describes a function object responsible for writing
@@ -168,11 +178,6 @@ public:
                 const std::vector<strong_actor_ptr>& forwarding_stack,
                 const strong_actor_ptr& receiver,
                 message_id mid, const message& msg);
-
-  /// Returns the actor namespace associated to this BASP protocol instance.
-  proxy_registry& proxies() {
-    return callee_.proxies();
-  }
 
   /// Returns the routing table of this BASP instance.
   routing_table& tbl() {

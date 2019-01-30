@@ -27,11 +27,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "caf/stateful_actor.hpp"
-#include "caf/proxy_registry.hpp"
-#include "caf/binary_serializer.hpp"
 #include "caf/binary_deserializer.hpp"
+#include "caf/binary_serializer.hpp"
 #include "caf/forwarding_actor_proxy.hpp"
+#include "caf/stateful_actor.hpp"
 
 #include "caf/io/basp/all.hpp"
 #include "caf/io/broker.hpp"
@@ -40,16 +39,10 @@
 namespace caf {
 namespace io {
 
-struct basp_broker_state : proxy_registry::backend, basp::instance::callee {
+struct basp_broker_state : basp::instance::callee {
   basp_broker_state(broker* selfptr);
 
   ~basp_broker_state() override;
-
-  // inherited from proxy_registry::backend
-  strong_actor_ptr make_proxy(node_id nid, actor_id aid) override;
-
-  // inherited from proxy_registry::backend
-  execution_unit* registry_context() override;
 
   // inherited from basp::instance::callee
   void finalize_handshake(const node_id& nid, actor_id aid,
@@ -92,9 +85,9 @@ struct basp_broker_state : proxy_registry::backend, basp::instance::callee {
   // inherited from basp::instance::callee
   void flush(connection_handle hdl) override;
 
-  void handle_heartbeat(const node_id&) override {
-    // nop
-  }
+  void handle_heartbeat(const node_id&) override;
+
+  proxy_registry& proxies();
 
   /// Sets `this_context` by either creating or accessing state for `hdl`.
   void set_context(connection_handle hdl);
@@ -163,8 +156,6 @@ public:
   explicit basp_broker(actor_config& cfg);
 
   behavior make_behavior() override;
-  proxy_registry* proxy_registry_ptr() override;
-  resume_result resume(execution_unit*, size_t) override;
 };
 
 } // namespace io
