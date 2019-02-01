@@ -245,12 +245,13 @@ inline logger* get_current_logger() {
 
 } // namespace <anonymous>
 
-logger::config::config()
-    : verbosity(CAF_LOG_LEVEL),
-      file_verbosity(CAF_LOG_LEVEL),
-      console_verbosity(CAF_LOG_LEVEL),
-      inline_output(false),
-      console_coloring(false) {
+logger::config::config() noexcept
+  : verbosity(CAF_LOG_LEVEL),
+    file_verbosity(CAF_LOG_LEVEL),
+    console_verbosity(CAF_LOG_LEVEL),
+    inline_output(0),
+    console_coloring(0),
+    pad(0) {
   // nop
 }
 
@@ -334,7 +335,7 @@ actor_id logger::thread_local_aid(actor_id aid) {
 }
 
 void logger::log(event&& x) {
-  if (cfg_.inline_output)
+  if (cfg_.load().inline_output)
     handle_event(x);
   else
     queue_.push_back(std::move(x));
@@ -352,7 +353,7 @@ logger* logger::current_logger() {
 }
 
 bool logger::accepts(unsigned level, atom_value cname) {
-  if (level > cfg_.verbosity)
+  if (level > cfg_.load().verbosity)
     return false;
   return !std::any_of(component_blacklist.begin(), component_blacklist.end(),
                       [=](atom_value name) { return name == cname; });
@@ -384,9 +385,10 @@ void logger::init(actor_system_config& cfg) {
   file_verbosity = get_or(cfg, "logger.file-verbosity", file_verbosity);
   console_verbosity =
     get_or(cfg, "logger.console-verbosity", console_verbosity);
-  cfg_.file_verbosity = to_level_int(file_verbosity);
-  cfg_.console_verbosity = to_level_int(console_verbosity);
-  cfg_.verbosity = std::max(cfg_.file_verbosity, cfg_.console_verbosity);
+  auto tmp = cfg_.load();
+  tmp.file_verbosity = to_level_int(file_verbosity);
+  tmp.console_verbosity = to_level_int(console_verbosity);
+  tmp.verbosity = std::max(tmp.file_verbosity, tmp.console_verbosity);
   // Parse the format string.
   file_format_ =
     parse_format(get_or(cfg, "logger.file-format", lg::file_format));
@@ -394,14 +396,15 @@ void logger::init(actor_system_config& cfg) {
                                         lg::console_format));
   // Set flags.
   if (get_or(cfg, "logger.inline-output", false))
-    cfg_.inline_output = true;
+    tmp.inline_output = true;
   auto con_atm = get_or(cfg, "logger.console", lg::console);
   if (to_lowercase(con_atm) == atom("colored")) {
-    cfg_.console_coloring = true;
+    tmp.console_coloring = true;
   } else if (to_lowercase(con_atm) != atom("uncolored")) {
     // Disable console output if neither 'colored' nor 'uncolored' are present.
-    cfg_.console_verbosity = CAF_LOG_LEVEL_QUIET;
+    tmp.console_verbosity = CAF_LOG_LEVEL_QUIET;
   }
+  cfg_.store(tmp);
 }
 
 void logger::render_fun_prefix(std::ostream& out, const event& x) {
@@ -575,7 +578,7 @@ void logger::handle_file_event(const event& x) {
 void logger::handle_console_event(const event& x) {
   if (x.level > console_verbosity())
     return;
-  if (cfg_.console_coloring) {
+  if (cfg_.load().console_coloring) {
     switch (x.level) {
       default:
         break;
@@ -668,7 +671,7 @@ void logger::start() {
       return;
     }
   }
-  if (cfg_.inline_output)
+  if (cfg_.load().inline_output)
     log_first_line();
   else
     thread_ = std::thread{[this] {
@@ -680,7 +683,7 @@ void logger::start() {
 }
 
 void logger::stop() {
-  if (cfg_.inline_output) {
+  if (cfg_.load().inline_output) {
     log_last_line();
     return;
   }

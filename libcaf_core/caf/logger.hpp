@@ -18,13 +18,14 @@
 
 #pragma once
 
-#include <thread>
-#include <fstream>
+#include <atomic>
 #include <cstring>
-#include <sstream>
+#include <fstream>
 #include <iostream>
-#include <typeinfo>
+#include <sstream>
+#include <thread>
 #include <type_traits>
+#include <typeinfo>
 #include <unordered_map>
 
 #include "caf/abstract_actor.hpp"
@@ -92,13 +93,23 @@ public:
     /// Configures whether the logger immediately writes its output in the
     /// calling thread, bypassing its queue. Use this option only in
     /// single-threaded test environments.
-    bool inline_output : 1;
+    unsigned inline_output : 1;
 
     /// Configures whether the logger generates colored output.
-    bool console_coloring : 1;
+    unsigned console_coloring : 1;
 
-    config();
+    /// Pad to 32-bit.
+    unsigned pad : 16;
+
+    config() noexcept;
+
+    // Note: technically, the 1-bit fields really should be booleans.
+    //       Unfortunately, using bool over unsigned breaks alignment on MSVC.
   };
+
+  static_assert(sizeof(config) == sizeof(uint32_t), "invalid size");
+
+  static_assert(alignof(config) == alignof(uint32_t), "invalid alignment");
 
   /// Encapsulates a single logging event.
   struct event {
@@ -242,15 +253,15 @@ public:
   }
 
   unsigned verbosity() const noexcept {
-    return cfg_.verbosity;
+    return cfg_.load().verbosity;
   }
 
   unsigned file_verbosity() const noexcept {
-    return cfg_.file_verbosity;
+    return cfg_.load().file_verbosity;
   }
 
   unsigned console_verbosity() const noexcept {
-    return cfg_.console_verbosity;
+    return cfg_.load().console_verbosity;
   }
 
   // -- static utility functions -----------------------------------------------
@@ -343,7 +354,7 @@ private:
   // -- member variables -------------------------------------------------------
 
   // Configures verbosity and output generation.
-  config cfg_;
+  std::atomic<config> cfg_;
 
   // Filters events by component name.
   std::vector<atom_value> component_blacklist;
