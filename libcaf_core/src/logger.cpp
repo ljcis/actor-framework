@@ -358,7 +358,7 @@ bool logger::accepts(unsigned level, atom_value cname) {
                       [=](atom_value name) { return name == cname; });
 }
 
-logger::logger(actor_system& sys) : system_(sys) {
+logger::logger(actor_system& sys) : system_(sys), t0_(make_timestamp()) {
   // nop
 }
 
@@ -635,7 +635,6 @@ void logger::start() {
   parent_thread_ = std::this_thread::get_id();
   if (verbosity() == CAF_LOG_LEVEL_QUIET)
     return;
-  t0_ = make_timestamp();
   auto f = get_or(system_.config(), "logger.file-name",
                   defaults::logger::file_name);
   if (f.empty()) {
